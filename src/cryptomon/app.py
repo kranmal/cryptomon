@@ -184,8 +184,9 @@ class Bus(QObject):
 
 # ----------------------------------------------------------------- dialogs ----
 class AddCoinDialog(QDialog):
-    def __init__(self, parent, bus):
+    def __init__(self, parent, bus, held=None):
         super().__init__(parent)
+        self.held = held or {}  # coin id -> amount already held
         self.setWindowTitle("Add coin")
         self.setMinimumWidth(380)
         self.bus, self.coin = bus, None
@@ -249,6 +250,11 @@ class AddCoinDialog(QDialog):
 
     def pick(self, item):
         self.coin = item.data(Qt.UserRole) if item else None
+        h = self.held.get(self.coin["id"]) if self.coin else None
+        self.status.setText(
+            f"You already hold {fmt_amount(h)} {self.coin['symbol']}; "
+            "the amount below will be added to it. To set a new total, "
+            "cancel and use Update coin." if h is not None else "")
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(self.coin is not None)
 
     def done(self, r):
@@ -469,6 +475,14 @@ class Monitor(QWidget):
             m.addAction(f"Remove {h['symbol']}", lambda: self.remove(i))
             m.addSeparator()
         m.addAction("Add coin…", self.add)
+        if self.cfg["holdings"]:
+            um = m.addMenu("Update coin")
+            for j, h in enumerate(self.cfg["holdings"]):
+                um.addAction(f"{h['symbol']}  ({fmt_amount(h['amount'])})",
+                             lambda j=j: self.edit(j))
+            rm = m.addMenu("Remove coin")
+            for j, h in enumerate(self.cfg["holdings"]):
+                rm.addAction(h["symbol"], lambda j=j: self.remove(j))
         m.addAction("Refresh now", self.refresh)
         m.addSeparator()
         cm = m.addMenu("Currency")
@@ -491,7 +505,8 @@ class Monitor(QWidget):
         return m
 
     def add(self):
-        d = AddCoinDialog(self, self.bus)
+        d = AddCoinDialog(self, self.bus,
+                         {h["id"]: h["amount"] for h in self.cfg["holdings"]})
         if d.exec() != QDialog.Accepted or not d.coin:
             return
         c, amt = d.coin, d.amount.value()
