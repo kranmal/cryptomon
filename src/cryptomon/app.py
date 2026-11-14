@@ -33,6 +33,7 @@ API = "https://api.coingecko.com/api/v3"
 INTERVALS = {30: "30 seconds", 60: "1 minute", 120: "2 minutes", 300: "5 minutes"}
 W = 340
 HEAD_H, ROW_H, FOOT_H = 78, 50, 30
+MARGIN_V = 48  # keep this far from the top and bottom of the screen
 PLACEMENTS = {"left": "Left edge of screen", "right": "Right edge of screen",
               "keep": "Wherever the desktop puts it"}
 CURRENCIES = {"gbp": "£", "usd": "$", "eur": "€"}
@@ -324,6 +325,7 @@ class Monitor(QWidget):
         self.cfg = load_config() if not demo else demo_config()
         self.data, self.status, self.updated = {}, "loading…", None
         self.menu_hover = False
+        self.scroll = 0
         self.setMouseTracking(True)
         self.bus = Bus()
         self.bus.markets.connect(self.on_markets)
@@ -347,9 +349,31 @@ class Monitor(QWidget):
         self.tick.start(15000)
         self.refresh()
 
-    def want_height(self):
+    def full_height(self):
         rows = max(len(self.cfg["holdings"]), 1)
         return HEAD_H + rows * ROW_H + FOOT_H
+
+    def max_height(self):
+        """Tallest the widget may be: the screen's usable height minus a margin."""
+        try:
+            scr = self.screen() or QApplication.primaryScreen()
+            avail = scr.availableGeometry().height()
+        except Exception:  # noqa: BLE001
+            avail = 1080
+        return max(HEAD_H + ROW_H + FOOT_H, avail - 2 * MARGIN_V)
+
+    def want_height(self):
+        return min(self.full_height(), self.max_height())
+
+    def view_h(self):
+        """Height of the scrolling rows area."""
+        return self.height() - HEAD_H - FOOT_H
+
+    def max_scroll(self):
+        return max(0, max(len(self.cfg["holdings"]), 1) * ROW_H - self.view_h())
+
+    def scroll_pos(self):
+        return min(max(self.scroll, 0), self.max_scroll())
 
     # ---- data ----
     def refresh(self):
@@ -445,6 +469,10 @@ class Monitor(QWidget):
         p.setPen(QPen(QColor(255, 255, 255, 50), 1))
         p.drawLine(14, HEAD_H - 2, W - 14, HEAD_H - 2)
 
+        p.save()
+        p.setClipRect(QRectF(0, HEAD_H, W, self.view_h()))
+        off = self.scroll_pos()
+        p.translate(0, -off)
         if not hold:
             self.text(p, 0, HEAD_H + 30, "No coins yet", QColor("#cccccc"),
                       align=Qt.AlignCenter, width=W)
@@ -471,7 +499,16 @@ class Monitor(QWidget):
             sc = GREEN if len(sp) > 1 and sp[-1] >= sp[0] else RED
             self.spark(p, 150, y + 8, 80, 28, sp, sc)
 
-        fy = HEAD_H + max(len(hold), 1) * ROW_H + 18
+        p.restore()
+        ms = self.max_scroll()
+        if ms:  # slim scrollbar: there are more coins than fit
+            vh = self.view_h()
+            th = max(20.0, vh * vh / (vh + ms))
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(255, 255, 255, 70))
+            p.drawRoundedRect(QRectF(W - 7, HEAD_H + (vh - th) * off / ms, 3, th), 1.5, 1.5)
+
+        fy = self.height() - FOOT_H + 18
         if self.status:
             self.text(p, 14, fy, self.status, QColor("#ffcf5c"), size=8)
         elif self.updated:
@@ -482,7 +519,9 @@ class Monitor(QWidget):
 
     # ---- interaction ----
     def row_at(self, pos):
-        i = int((pos.y() - HEAD_H) // ROW_H)
+        if not HEAD_H <= pos.y() < self.height() - FOOT_H:
+            return None
+        i = int((pos.y() + self.scroll_pos() - HEAD_H) // ROW_H)
         return i if 0 <= i < len(self.cfg["holdings"]) else None
 
     def mouseMoveEvent(self, e):
@@ -509,6 +548,13 @@ class Monitor(QWidget):
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton:
             self.save()
+
+    def wheelEvent(self, e):
+        if self.max_scroll():
+            self.scroll = min(max(self.scroll_pos() - e.angleDelta().y() * 0.5, 0),
+                              self.max_scroll())
+            self.update()
+        e.accept()
 
     def mouseDoubleClickEvent(self, e):
         i = self.row_at(e.position())
@@ -644,6 +690,7 @@ class Monitor(QWidget):
         else:
             self.cfg["holdings"].append({
                 "id": c["id"], "symbol": c["symbol"], "name": c["name"], "amount": amt})
+            self.scroll = 10 ** 9  # show the new coin (clamped once the window is resized)
         self.changed()
 
     def edit(self, i):
@@ -666,6 +713,7 @@ class Monitor(QWidget):
         """Size the window to its rows. Fixed size (recomputed on every change) so
         the compositor always honours the new height instead of keeping the old one."""
         self.setFixedSize(W, self.want_height())
+        self.scroll = self.scroll_pos()
         self.updateGeometry()
         self.repaint()
 

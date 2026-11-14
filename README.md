@@ -11,6 +11,7 @@ Add the coins you hold and watch their live value, 24h change and 7 day trend.
 - Per coin: amount, price, value, 24h change, 7 day sparkline
 - Add any coin CoinGecko lists (search by name or symbol), edit or remove it later
 - GBP, USD or EUR; adjustable opacity; optional click-through
+- Tall lists stop at the screen height and scroll (mouse wheel, with a slim scrollbar)
 - Opens on the left edge of the screen (or right, or where your desktop puts it)
 - System tray icon: click to hide or show the widget, hover for your portfolio total, right-click for the full menu
 - Remembers your coins, currency, refresh interval and opacity
