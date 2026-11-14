@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Crypto Monitor
+Comment=Transparent desktop crypto portfolio monitor
+Exec=cryptomon
+Icon=cryptomon
+Categories=Office;Finance;
+StartupWMClass=cryptomon
