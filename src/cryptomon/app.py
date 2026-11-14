@@ -272,7 +272,7 @@ class Monitor(QWidget):
         self.setWindowTitle("cryptomon")
         self.resize(W, self.want_height())
         pos = self.cfg.get("pos")
-        if pos and not demo:
+        if pos and not demo and QApplication.platformName() != "wayland":
             self.move(*pos)
         t = QTimer(self)
         t.timeout.connect(self.refresh)
@@ -320,7 +320,9 @@ class Monitor(QWidget):
 
     def save(self):
         if not self.demo:
-            self.cfg["pos"] = [self.x(), self.y()]
+            # Wayland never reports window positions (always 0,0): don't save junk.
+            if QApplication.platformName() != "wayland":
+                self.cfg["pos"] = [self.x(), self.y()]
             save_config(self.cfg)
 
     # ---- drawing ----
@@ -541,6 +543,8 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("cryptomon")
     app.setDesktopFileName("cryptomon")
+    # The widget is a Tool window; closing a dialog must not quit the app.
+    app.setQuitOnLastWindowClosed(False)
     w = Monitor(demo=demo)
     w.show()
     app.aboutToQuit.connect(w.save)
