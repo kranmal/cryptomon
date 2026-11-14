@@ -285,7 +285,7 @@ class Monitor(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setWindowTitle("cryptomon")
         self.menu_btn = QRectF(W - 14 - 22, 7, 22, 22)
-        self.resize(W, self.want_height())
+        self.fit()
         pos = self.cfg.get("pos")
         if pos and not demo and QApplication.platformName() != "wayland":
             self.move(*pos)
@@ -535,10 +535,16 @@ class Monitor(QWidget):
             del self.cfg["holdings"][i]
             self.changed(refetch=False)
 
+    def fit(self):
+        """Size the window to its rows. Fixed size (recomputed on every change) so
+        the compositor always honours the new height instead of keeping the old one."""
+        self.setFixedSize(W, self.want_height())
+        self.updateGeometry()
+        self.repaint()
+
     def changed(self, refetch=True):
         self.save()
-        self.resize(W, self.want_height())
-        self.update()
+        self.fit()
         if refetch:
             self.refresh()
 
