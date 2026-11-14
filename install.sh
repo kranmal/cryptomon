@@ -13,6 +13,6 @@ fi
 mkdir -p "$HOME/.local/share/applications"
 cp data/cryptomon.desktop "$HOME/.local/share/applications/"
 mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
-cp data/cryptomon.svg "$HOME/.local/share/icons/hicolor/scalable/apps/"
+cp src/cryptomon/icon.svg "$HOME/.local/share/icons/hicolor/scalable/apps/cryptomon.svg"
 gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 echo "Installed. Run: cryptomon   (ensure ~/.local/bin is in PATH)"

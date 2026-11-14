@@ -28,7 +28,7 @@ Run `cryptomon`.
 - Left-drag to move
 - Right-click, **Add coin…**: search, pick a coin, enter how much you hold
 - Double-click a coin to change its amount; right-click it to remove it
-- Right-click for currency, refresh interval, opacity, refresh, click-through and quit
+- Click the ≡ button (top right) or right-click for the menu: currency, refresh interval, opacity, refresh, click-through and quit
 
 Prices refresh every minute by default; pick 30 seconds to 5 minutes under right-click, **Refresh every**. Try it with fake data and no network:
 `cryptomon --demo`.

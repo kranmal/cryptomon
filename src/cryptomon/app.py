@@ -18,14 +18,17 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QObject, QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QPainter, QPainterPath,
+                           QPen, QPixmap)
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFormLayout, QInputDialog,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMenu, QMessageBox, QPushButton, QHBoxLayout,
                                QVBoxLayout, QWidget)
 
+ICON = Path(__file__).with_name("icon.svg")
 API = "https://api.coingecko.com/api/v3"
 INTERVALS = {30: "30 seconds", 60: "1 minute", 120: "2 minutes", 300: "5 minutes"}
 W = 340
@@ -265,6 +268,8 @@ class Monitor(QWidget):
         self.demo = demo
         self.cfg = load_config() if not demo else demo_config()
         self.data, self.status, self.updated = {}, "loading…", None
+        self.menu_hover = False
+        self.setMouseTracking(True)
         self.bus = Bus()
         self.bus.markets.connect(self.on_markets)
         self.bus.failed.connect(self.on_failed)
@@ -273,6 +278,7 @@ class Monitor(QWidget):
             Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setWindowTitle("cryptomon")
+        self.menu_btn = QRectF(W - 14 - 22, 7, 22, 22)
         self.resize(W, self.want_height())
         pos = self.cfg.get("pos")
         if pos and not demo and QApplication.platformName() != "wayland":
@@ -366,7 +372,14 @@ class Monitor(QWidget):
 
         total, delta, pct = portfolio(hold, self.data)
         self.text(p, 14, 24, "PORTFOLIO", QColor("#9ad1ff"), bold=True, size=9)
-        self.text(p, 0, 24, cur.upper(), GREY, size=9, align=Qt.AlignRight, width=R)
+        self.text(p, 0, 24, cur.upper(), GREY, size=9, align=Qt.AlignRight, width=R - 30)
+        b = self.menu_btn  # little menu button: three bars
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(255, 255, 255, 38 if self.menu_hover else 18))
+        p.drawRoundedRect(b, 6, 6)
+        p.setBrush(QColor("#cfd6e0"))
+        for k in range(3):
+            p.drawRoundedRect(QRectF(b.x() + 5, b.y() + 6 + k * 4.5, 12, 1.8), 0.9, 0.9)
         self.text(p, 14, 52, fmt_money(total, cur), bold=True, size=18)
         if pct is not None:
             c = GREEN if delta >= 0 else RED
@@ -415,8 +428,25 @@ class Monitor(QWidget):
         i = int((pos.y() - HEAD_H) // ROW_H)
         return i if 0 <= i < len(self.cfg["holdings"]) else None
 
+    def mouseMoveEvent(self, e):
+        h = self.menu_btn.contains(e.position())
+        if h != self.menu_hover:
+            self.menu_hover = h
+            self.update()
+
+    def leaveEvent(self, _):
+        if self.menu_hover:
+            self.menu_hover = False
+            self.update()
+
     def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton and self.windowHandle():
+        if e.button() != Qt.LeftButton:
+            return
+        if self.menu_btn.contains(e.position()):
+            b = self.menu_btn
+            self.build_menu(None).exec(self.mapToGlobal(
+                QPoint(int(b.right() - 150), int(b.bottom() + 4))))
+        elif self.windowHandle():
             self.windowHandle().startSystemMove()
 
     def mouseReleaseEvent(self, e):
@@ -429,8 +459,10 @@ class Monitor(QWidget):
             self.edit(i)
 
     def contextMenuEvent(self, e):
+        self.build_menu(self.row_at(e.pos())).exec(e.globalPos())
+
+    def build_menu(self, i):
         m = QMenu(self)
-        i = self.row_at(e.pos())
         if i is not None:
             h = self.cfg["holdings"][i]
             m.addAction(f"Edit {h['symbol']} amount…", lambda: self.edit(i))
@@ -456,7 +488,7 @@ class Monitor(QWidget):
             om.addAction(label, lambda a=a: self.set_alpha(a))
         m.addAction("Click-through (restart to undo)", self.enable_click_through)
         m.addAction("Quit", self.quit)
-        m.exec(e.globalPos())
+        return m
 
     def add(self):
         d = AddCoinDialog(self, self.bus)
@@ -541,6 +573,20 @@ def demo_data():
         "dogecoin": {"price": 0.0912, "change": -0.64, "spark": wave(3, -3)}}
 
 
+def load_icon():
+    """Render the bundled SVG to a multi-size QIcon (works without SVG icon plugins)."""
+    icon = QIcon()
+    r = QSvgRenderer(str(ICON))
+    for n in (16, 32, 48, 64, 128, 256):
+        pm = QPixmap(n, n)
+        pm.fill(Qt.transparent)
+        q = QPainter(pm)
+        r.render(q)
+        q.end()
+        icon.addPixmap(pm)
+    return icon
+
+
 def shot(w, out):
     """Save a screenshot on a dark backdrop (the widget itself is translucent)."""
     from PySide6.QtGui import QPixmap
@@ -558,6 +604,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("cryptomon")
     app.setDesktopFileName("cryptomon")
+    app.setWindowIcon(load_icon())
     # The widget is a Tool window; closing a dialog must not quit the app.
     app.setQuitOnLastWindowClosed(False)
     w = Monitor(demo=demo)
