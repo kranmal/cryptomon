@@ -542,9 +542,23 @@ class Monitor(QWidget):
         self.updateGeometry()
         self.repaint()
 
+    def fit_later(self):
+        """Resize shortly after the call, then verify and retry.
+
+        On KWin/Wayland a resize requested right after a modal dialog closes (the
+        Add/Edit flows) is silently ignored, so the window would keep its old height.
+        """
+        def verify():
+            if self.height() != self.want_height():
+                self.fit()
+        QTimer.singleShot(150, self.fit)
+        QTimer.singleShot(600, verify)
+        QTimer.singleShot(1500, verify)
+
     def changed(self, refetch=True):
         self.save()
-        self.fit()
+        self.update()
+        self.fit_later()
         if refetch:
             self.refresh()
 
