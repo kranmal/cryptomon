@@ -43,6 +43,11 @@ class Logic(unittest.TestCase):
             self.assertEqual(c["currency"], "gbp")
             self.assertEqual(c["opacity"], 130)
             self.assertEqual([h["id"] for h in c["holdings"]], ["c"])
+            self.assertEqual(c["interval"], 60)
+            p.write_text(json.dumps({"interval": 120}))
+            self.assertEqual(app.load_config(p)["interval"], 120)
+            p.write_text(json.dumps({"interval": 1}))  # too fast: ignored
+            self.assertEqual(app.load_config(p)["interval"], 60)
             p.write_text("not json")
             self.assertEqual(app.load_config(p)["holdings"], [])
 

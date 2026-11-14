@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
                                QVBoxLayout, QWidget)
 
 API = "https://api.coingecko.com/api/v3"
-REFRESH_S = 60
+INTERVALS = {30: "30 seconds", 60: "1 minute", 120: "2 minutes", 300: "5 minutes"}
 W = 340
 HEAD_H, ROW_H, FOOT_H = 78, 50, 30
 CURRENCIES = {"gbp": "£", "usd": "$", "eur": "€"}
@@ -40,7 +40,8 @@ def config_path():
     return Path(base) / "cryptomon" / "config.json"
 
 
-DEFAULTS = {"currency": "gbp", "opacity": 130, "pos": None, "holdings": []}
+DEFAULTS = {"currency": "gbp", "opacity": 130, "interval": 60, "pos": None,
+            "holdings": []}
 
 
 def load_config(path=None):
@@ -54,6 +55,8 @@ def load_config(path=None):
         return cfg
     if raw.get("currency") in CURRENCIES:
         cfg["currency"] = raw["currency"]
+    if raw.get("interval") in INTERVALS:
+        cfg["interval"] = raw["interval"]
     if isinstance(raw.get("opacity"), int) and 0 <= raw["opacity"] <= 255:
         cfg["opacity"] = raw["opacity"]
     pos = raw.get("pos")
@@ -274,9 +277,9 @@ class Monitor(QWidget):
         pos = self.cfg.get("pos")
         if pos and not demo and QApplication.platformName() != "wayland":
             self.move(*pos)
-        t = QTimer(self)
-        t.timeout.connect(self.refresh)
-        t.start(REFRESH_S * 1000)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(self.cfg["interval"] * 1000)
         self.tick = QTimer(self)  # repaint so "updated" text stays fresh
         self.tick.timeout.connect(self.update)
         self.tick.start(15000)
@@ -442,6 +445,12 @@ class Monitor(QWidget):
             a.setChecked(c == self.cfg["currency"])
             a.triggered.connect(lambda _=False, c=c: self.set_currency(c))
             cm.addAction(a)
+        im = m.addMenu("Refresh every")
+        for secs, label in INTERVALS.items():
+            a = QAction(label, im, checkable=True)
+            a.setChecked(secs == self.cfg["interval"])
+            a.triggered.connect(lambda _=False, secs=secs: self.set_interval(secs))
+            im.addAction(a)
         om = m.addMenu("Opacity")
         for label, a in (("Clear", 0), ("Light", 60), ("Medium", 130), ("Dark", 200)):
             om.addAction(label, lambda a=a: self.set_alpha(a))
@@ -491,6 +500,11 @@ class Monitor(QWidget):
         self.save()
         self.refresh()
 
+    def set_interval(self, secs):
+        self.cfg["interval"] = secs
+        self.timer.start(secs * 1000)  # restarts the countdown
+        self.save()
+
     def set_alpha(self, a):
         self.cfg["opacity"] = a
         self.save()
@@ -507,7 +521,8 @@ class Monitor(QWidget):
 
 # -------------------------------------------------------------------- demo ----
 def demo_config():
-    return {"currency": "gbp", "opacity": 130, "pos": None, "holdings": [
+    return {"currency": "gbp", "opacity": 130, "interval": 60, "pos": None,
+            "holdings": [
         {"id": "bitcoin", "symbol": "BTC", "name": "Bitcoin", "amount": 0.25},
         {"id": "ethereum", "symbol": "ETH", "name": "Ethereum", "amount": 2.4},
         {"id": "solana", "symbol": "SOL", "name": "Solana", "amount": 18.0},
