@@ -11,7 +11,9 @@ Add the coins you hold and watch their live value, 24h change and 7 day trend.
 - Per coin: amount, price, value, 24h change, 7 day sparkline
 - Add any coin CoinGecko lists (search by name or symbol), edit or remove it later
 - GBP, USD or EUR; adjustable opacity; optional click-through
-- Remembers your coins, currency, opacity and window position
+- Opens on the left edge of the screen (or right, or where your desktop puts it)
+- System tray icon: click to hide or show the widget, hover for your portfolio total, right-click for the full menu
+- Remembers your coins, currency, refresh interval and opacity
 
 ## Requirements
 - Linux, Python >= 3.9, a desktop session (X11 or Wayland), internet access
@@ -49,7 +51,8 @@ addresses, no exchange keys.
 - Data from [CoinGecko](https://www.coingecko.com)'s free public API. It is
   rate limited; if it says "rate limited, retrying" it will try again next minute.
 - Prices are indicative, not trading quotes. This is not financial advice.
-- Wayland: always-on-bottom depends on the compositor; works best on X11/XWayland.
+- Wayland: apps cannot place their own windows, so on KDE Plasma cryptomon asks KWin to move it to the chosen edge (menu, **Open at**). On other Wayland desktops it stays where the compositor puts it; X11 works everywhere. Always-on-bottom also depends on the compositor.
+- The tray icon needs a desktop with a system tray (KDE, most others via an extension). Without one the widget just stays on the desktop.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
 
 MIT licensed.

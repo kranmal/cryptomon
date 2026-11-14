@@ -22,7 +22,7 @@ from PySide6.QtCore import QObject, QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFont, QIcon, QPainter, QPainterPath,
                            QPen, QPixmap)
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox,
+from PySide6.QtWidgets import (QApplication, QSystemTrayIcon, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFormLayout, QInputDialog,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMenu, QMessageBox, QPushButton, QHBoxLayout,
@@ -33,6 +33,8 @@ API = "https://api.coingecko.com/api/v3"
 INTERVALS = {30: "30 seconds", 60: "1 minute", 120: "2 minutes", 300: "5 minutes"}
 W = 340
 HEAD_H, ROW_H, FOOT_H = 78, 50, 30
+PLACEMENTS = {"left": "Left edge of screen", "right": "Right edge of screen",
+              "keep": "Wherever the desktop puts it"}
 CURRENCIES = {"gbp": "£", "usd": "$", "eur": "€"}
 GREEN, RED, GREY = QColor("#5fe3a1"), QColor("#ff6b6b"), QColor("#8a8f98")
 
@@ -44,7 +46,7 @@ def config_path():
 
 
 DEFAULTS = {"currency": "gbp", "opacity": 130, "interval": 60, "pos": None,
-            "holdings": []}
+            "placement": "left", "holdings": []}
 
 
 def load_config(path=None):
@@ -58,6 +60,8 @@ def load_config(path=None):
         return cfg
     if raw.get("currency") in CURRENCIES:
         cfg["currency"] = raw["currency"]
+    if raw.get("placement") in PLACEMENTS:
+        cfg["placement"] = raw["placement"]
     if raw.get("interval") in INTERVALS:
         cfg["interval"] = raw["interval"]
     if isinstance(raw.get("opacity"), int) and 0 <= raw["opacity"] <= 255:
@@ -175,6 +179,51 @@ def describe_error(e):
     return "offline, retrying"
 
 
+KWIN_PLACE_JS = """
+(function () {
+  var edge = "%EDGE%", title = "%TITLE%", mx = 24, my = 48;
+  var list = workspace.windowList();
+  for (var i = 0; i < list.length; i++) {
+    var w = list[i];
+    if (String(w.caption) !== title) continue;
+    var a = workspace.clientArea(KWin.PlacementArea, w), g = w.frameGeometry;
+    var x = edge === "right" ? a.x + a.width - g.width - mx : a.x + mx;
+    w.frameGeometry = {x: x, y: a.y + my, width: g.width, height: g.height};
+  }
+})();
+"""
+_place_n = [0]
+
+
+def kwin_place(edge, title="cryptomon"):
+    """Move our window to a screen edge through KWin's scripting D-Bus API.
+
+    Wayland clients cannot position their own windows, so on KDE Plasma we ask the
+    compositor. Returns False when KWin is not there (other desktops)."""
+    from PySide6.QtDBus import QDBusConnection, QDBusInterface
+    bus = QDBusConnection.sessionBus()
+    scripting = QDBusInterface("org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting", bus)
+    if not scripting.isValid():
+        return False
+    _place_n[0] += 1
+    name = f"cryptomon-place-{os.getpid()}-{_place_n[0]}"
+    path = Path(tempfile.gettempdir()) / f"{name}.js"
+    path.write_text(KWIN_PLACE_JS.replace("%EDGE%", edge).replace("%TITLE%", title))
+    try:
+        sid = scripting.call("loadScript", str(path), name).arguments()[0]
+        if isinstance(sid, int) and sid >= 0:
+            QDBusInterface("org.kde.KWin", f"/Scripting/Script{sid}",
+                           "org.kde.kwin.Script", bus).call("run")
+            scripting.call("unloadScript", name)
+            return True
+        return False
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 class Bus(QObject):
     markets = Signal(object, str)   # data, currency it was fetched in
     failed = Signal(str)
@@ -289,6 +338,7 @@ class Monitor(QWidget):
         pos = self.cfg.get("pos")
         if pos and not demo and QApplication.platformName() != "wayland":
             self.move(*pos)
+        self.tray = self.make_tray()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(self.cfg["interval"] * 1000)
@@ -327,6 +377,7 @@ class Monitor(QWidget):
             return
         self.data, self.updated, self.status = data, time.time(), ""
         self.update()
+        self.update_tray()
 
     def on_failed(self, msg):
         self._inflight = False
@@ -467,8 +518,8 @@ class Monitor(QWidget):
     def contextMenuEvent(self, e):
         self.build_menu(self.row_at(e.pos())).exec(e.globalPos())
 
-    def build_menu(self, i):
-        m = QMenu(self)
+    def build_menu(self, i, m=None):
+        m = m if m is not None else QMenu(self)
         if i is not None:
             h = self.cfg["holdings"][i]
             m.addAction(f"Edit {h['symbol']} amount…", lambda: self.edit(i))
@@ -497,12 +548,88 @@ class Monitor(QWidget):
             a.setChecked(secs == self.cfg["interval"])
             a.triggered.connect(lambda _=False, secs=secs: self.set_interval(secs))
             im.addAction(a)
+        pm = m.addMenu("Open at")
+        for key, label in PLACEMENTS.items():
+            a = QAction(label, pm, checkable=True)
+            a.setChecked(key == self.cfg["placement"])
+            a.triggered.connect(lambda _=False, key=key: self.set_placement(key))
+            pm.addAction(a)
         om = m.addMenu("Opacity")
         for label, a in (("Clear", 0), ("Light", 60), ("Medium", 130), ("Dark", 200)):
             om.addAction(label, lambda a=a: self.set_alpha(a))
         m.addAction("Click-through (restart to undo)", self.enable_click_through)
+        if self.tray:
+            m.addAction("Hide to tray", self.toggle_visible)
         m.addAction("Quit", self.quit)
         return m
+
+    # ---- placement ----
+    def place(self):
+        edge = self.cfg["placement"]
+        if edge == "keep" or self.demo or not self.isVisible():
+            return
+        plat = QApplication.platformName()
+        if plat == "wayland":
+            try:
+                kwin_place(edge, self.windowTitle())
+            except Exception:  # noqa: BLE001  not KDE: leave it where the compositor put it
+                pass
+        elif plat in ("xcb", "windows", "cocoa"):
+            g = QApplication.primaryScreen().availableGeometry()
+            x = g.right() - self.width() - 24 if edge == "right" else g.left() + 24
+            self.move(x, g.top() + 48)
+
+    def place_later(self):
+        # The compositor needs the window mapped first; repeat once to be safe.
+        QTimer.singleShot(400, self.place)
+        QTimer.singleShot(1500, self.place)
+
+    def set_placement(self, key):
+        self.cfg["placement"] = key
+        self.save()
+        self.place()
+
+    # ---- tray ----
+    def make_tray(self):
+        if self.demo or not QSystemTrayIcon.isSystemTrayAvailable():
+            return None
+        t = QSystemTrayIcon(load_icon(), self)
+        t.setToolTip("cryptomon")
+        self.tray_menu = QMenu()
+        self.tray_menu.aboutToShow.connect(self.fill_tray_menu)
+        t.setContextMenu(self.tray_menu)
+        t.activated.connect(lambda r: self.toggle_visible()
+                            if r == QSystemTrayIcon.Trigger else None)
+        t.show()
+        return t
+
+    def fill_tray_menu(self):
+        m = self.tray_menu
+        m.clear()
+        m.addAction("Hide widget" if self.isVisible() else "Show widget",
+                    self.toggle_visible)
+        m.addSeparator()
+        self.build_menu(None, m)
+
+    def toggle_visible(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.fit_later()
+            self.place_later()
+
+    def update_tray(self):
+        if not self.tray:
+            return
+        total, delta, pct = portfolio(self.cfg["holdings"], self.data)
+        cur = self.cfg["currency"]
+        if not self.data:
+            self.tray.setToolTip("cryptomon")
+        else:
+            self.tray.setToolTip(
+                f"cryptomon\n{fmt_money(total, cur)}\n"
+                f"{fmt_money(delta, cur, True)}  {fmt_pct(pct)}  24h")
 
     def add(self):
         d = AddCoinDialog(self, self.bus,
@@ -582,6 +709,8 @@ class Monitor(QWidget):
         self.show()
 
     def quit(self):
+        if self.tray:
+            self.tray.hide()
         self.save()
         QApplication.quit()
 
@@ -644,6 +773,7 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     w = Monitor(demo=demo)
     w.show()
+    w.place_later()
     app.aboutToQuit.connect(w.save)
     if "--screenshot" in sys.argv:  # used to make docs/screenshot.png
         out = sys.argv[sys.argv.index("--screenshot") + 1]
