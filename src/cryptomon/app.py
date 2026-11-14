@@ -765,12 +765,12 @@ class Monitor(QWidget):
 
 # -------------------------------------------------------------------- demo ----
 def demo_config():
-    return {"currency": "gbp", "opacity": 130, "interval": 60, "pos": None,
-            "holdings": [
+    cfg = dict(DEFAULTS, holdings=[
         {"id": "bitcoin", "symbol": "BTC", "name": "Bitcoin", "amount": 0.25},
         {"id": "ethereum", "symbol": "ETH", "name": "Ethereum", "amount": 2.4},
         {"id": "solana", "symbol": "SOL", "name": "Solana", "amount": 18.0},
-        {"id": "dogecoin", "symbol": "DOGE", "name": "Dogecoin", "amount": 5200.0}]}
+        {"id": "dogecoin", "symbol": "DOGE", "name": "Dogecoin", "amount": 5200.0}])
+    return cfg
 
 
 def demo_data():

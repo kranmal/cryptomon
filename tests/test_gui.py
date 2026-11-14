@@ -67,5 +67,22 @@ class Scrolling(unittest.TestCase):
         self.assertEqual(w.height(), app.HEAD_H + 2 * app.ROW_H + app.FOOT_H)
 
 
+class Menu(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.qa = QApplication.instance() or QApplication([])
+
+    def test_menu_builds_in_demo_and_normal_mode(self):
+        for demo in (True, False):
+            w = app.Monitor(demo=demo)
+            titles = [a.text() for a in w.build_menu(None).actions()]
+            self.assertIn("Open at", titles)
+            self.assertIn("Refresh every", titles)
+            self.assertIn("Quit", titles)
+
+    def test_demo_config_has_every_setting(self):
+        self.assertTrue(set(app.DEFAULTS) <= set(app.demo_config()))
+
+
 if __name__ == "__main__":
     unittest.main()

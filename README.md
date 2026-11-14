@@ -16,6 +16,10 @@ Add the coins you hold and watch their live value, 24h change and 7 day trend.
 - System tray icon: click to hide or show the widget, hover for your portfolio total, right-click for the full menu
 - Remembers your coins, currency, refresh interval and opacity
 
+## Documentation
+- [User guide](docs/usage.md): the widget, the menu, tray, settings file, troubleshooting
+- [Development notes](docs/development.md): layout, tests, how it works
+
 ## Requirements
 - Linux, Python >= 3.9, a desktop session (X11 or Wayland), internet access
 - `PySide6` (installed automatically). No API key needed.
@@ -56,4 +60,5 @@ addresses, no exchange keys.
 - The tray icon needs a desktop with a system tray (KDE, most others via an extension). Without one the widget just stays on the desktop.
 - Tests: `PYTHONPATH=src python3 -m unittest discover -s tests`
 
-MIT licensed.
+## License
+MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Ketan Ranmal.
